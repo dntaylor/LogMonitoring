@@ -3,7 +3,7 @@ import os
 import sqlite3
 import logging
 
-logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
 class LogMonitorAPI(object):
 
@@ -12,19 +12,22 @@ class LogMonitorAPI(object):
 
         logName = 'logMonitor'
         logColumns = {
-            'file_name': 'TEXT',
+            'file_name' : 'TEXT',
             'module' : 'TEXT',
+            'log_key' : 'TEXT',
             'severity' : 'TEXT',
             'count' : 'INTEGER',
-            'log_key' : 'TEXT',
         }
+        logUnique = ['file_name','module','log_key','severity']
         fileName = 'processedFiles'
         fileColumns = {
-            'file_name': 'TEXT',
+            'file_name' : 'TEXT',
+            'dataset' : 'TEXT',
         }
+        fileUnique = ['file_name']
         if not os.path.isfile(self.sqlfile):
-            self.__create(logName,**logColumns)
-            self.__create(fileName,**fileColumns)
+            self.__create(logName,*logUnique,**logColumns)
+            self.__create(fileName,*fileUnique,**fileColumns)
 
     def __execute(self,command):
         logging.debug(command)
@@ -40,12 +43,15 @@ class LogMonitorAPI(object):
         c = conn.cursor()
         c.execute(command)
         result = c.fetchall()
-        conn.commit()
         conn.close()
         return result
 
-    def __create(self,tableName,**columns):
-        command = 'CREATE TABLE {table} ({columns})'.format(table=tableName,columns=', '.join([' '.join([key,val]) for key,val in columns.iteritems()]))
+    def __create(self,tableName,*unique,**columns):
+        command = 'CREATE TABLE {table} ({columns}, UNIQUE({unique}))'.format(
+            table=tableName,
+            columns=', '.join([' '.join([key,val]) for key,val in columns.iteritems()]),
+            unique=', '.join(unique)
+        )
         self.__execute(command)
 
     def __insert(self,tableName,**kwargs):
@@ -59,7 +65,10 @@ class LogMonitorAPI(object):
             columns=', '.join(columns),
             values=', '.join(values)
         )
-        self.__execute(command)
+        try:
+            self.__execute(command)
+        except sqlite3.IntegrityError as e:
+            logging.error(e)
 
     def __select(self,tableName,*columns,**conditions):
         conds = []
@@ -76,6 +85,15 @@ class LogMonitorAPI(object):
         result = self.__executeReturn(command)
         return result
         
+    def __wrapResult(self,columns,result):
+        newresult = []
+        for r in result:
+            nr = {}
+            for k,v in zip(columns,r):
+                nr[k] = v
+            newresult += [nr]
+        return newresult
+
     ###################
     ### Insert data ###
     ###################
@@ -89,14 +107,20 @@ class LogMonitorAPI(object):
     ### query data ###
     ##################
     def listModules(self,**kwargs):
-        return self.__select('logMonitor',**kwargs)
+        columns = ['file_name', 'module', 'log_key', 'severity', 'count']
+        result = self.__select('logMonitor',*columns,**kwargs)
+        return self.__wrapResult(columns,result)
 
     def listProcessedFiles(self,**kwargs):
-        return self.__select('processedFiles',**kwargs)
+        columns = ['file_name','dataset']
+        result = self.__select('processedFiles',*columns,**kwargs)
+        return self.__wrapResult(columns,result)
 
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
+
+    logging.getLogger().setLevel(logging.DEBUG)
 
     # simple setup
     sqlfile = 'test.sqlite'
@@ -104,11 +128,14 @@ def main(argv=None):
     api = LogMonitorAPI(sqlfile)
     api.insertModule(file_name='dummy',module='mod1',severity='INFO',count=1,log_key='ModErrorType')
     api.insertModule(file_name='dummy',module='mod2',severity='WARNING',count=2,log_key='ModErrorType')
-    api.insertProcessedFile(file_name='dummy')
+    api.insertProcessedFile(file_name='dummy',dataset='/a/b/c')
+
+    # attempt to insert duplicate
+    api.insertModule(file_name='dummy',module='mod1',severity='INFO',count=1,log_key='ModErrorType')
 
     # query test
     print api.listModules(file_name='dummy')
-    print api.listProcessedFiles()
+    print api.listProcessedFiles(dataset='/a/b/c')
 
 if __name__ == "__main__":
     status = main()

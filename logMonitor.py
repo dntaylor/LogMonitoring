@@ -6,6 +6,7 @@ import logging
 import argparse
 import itertools
 import fnmatch
+from LogMonitorAPI import LogMonitorAPI
 
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
@@ -25,7 +26,7 @@ try:
 except:
     dbsLoaded = False
 
-def client():
+def getDBSClient():
 
     if not dbsLoaded:
         logging.error('You must source a crab environment to use DBS API.\nsource /cvmfs/cms.cern.ch/crab3/crab.sh')
@@ -36,10 +37,15 @@ def client():
 
     return dbsclient
 
+def getLogMonitorClient():
+    sqlfile = 'logMonitor.sqlite'
+    lmclient = LogMonitorAPI(sqlfile)
+    return lmclient
 
 def dataMonitor(args):
     '''Monitor script for data LogError'''
-    dbsclient = client()
+    dbsclient = getDBSClient()
+    lmclient = getLogMonitorClient()
 
     kwargs = {}
     if args.primaryDataset: kwargs['primary_ds_name'] = args.primaryDataset
@@ -53,10 +59,15 @@ def dataMonitor(args):
         files = dbsclient.listFiles(dataset=dsname)
         print dsname, len(files)
         fnames = [f['logical_file_name'] for f in files]
-        for fname in fnames[:1]:
+        prevfiles = lmclient.listProcessedFiles(dataset=dsname)
+        pfnames = [p['file_name'] for p in prevfiles]
+        for fname in fnames:
+            if fname in pfnames:
+                print fname, 'already processed'
+                continue
+            print fname
             allSeverities = {}
             lfn = 'root://{0}/{1}'.format(args.redirector,fname)
-            print lfn
             events = Events(lfn)
             errorSummaryHandle = Handle('std::vector<edm::ErrorSummaryEntry>')
             errorSummaryLabel = ('logErrorHarvester')
@@ -81,6 +92,10 @@ def dataMonitor(args):
                 print severity
                 for error in allSeverities[severity]:
                     print '    ', error, allSeverities[severity][error]['count'], len(set(allSeverities[severity][error]['modules']))
+                    if error=='MemoryCheck': continue # manually skip MemoryCheck module
+                    for mod in set(allSeverities[severity][error]['modules']):
+                        lmclient.insertModule(file_name=fname,module=mod,severity=severity,log_key=error,count=allSeverities[severity][error]['modules'].count(mod))
+            lmclient.insertProcessedFile(file_name=fname,dataset=dsname)
 
     
 def relvalMonitor(args):
