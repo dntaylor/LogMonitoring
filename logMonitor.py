@@ -104,9 +104,42 @@ def dataMonitor(args):
                         lmclient.insertModule(file_name=fname,module=mod,severity=severity,log_key=error,count=allSeverities[severity][error]['modules'].count(mod))
             lmclient.insertProcessedFile(file_name=fname,dataset=dsname)
 
+
+def parseFrameworkJobReport(content):
+    return
+    print content
+    
+def parseLogFile(results,content):
+    for line in content:
+        if 'MemoryCheck:' in line: continue
+        if 'MSG-e' in line: # error
+            severity = 'Error'
+        elif 'MSG-w' in line: # warning
+            severity = 'Warning'
+        else:
+            continue
+        components = line.strip().split()
+        log_key = components[1].strip(':') if len(components)>1 else 'unknown'
+        if len(components)>2:
+            if ':' in components[2]:
+                module = components[2].split(':')[1]
+            else:
+                module = components[2]
+        else:
+            module = 'unknown'
+        if severity not in results:
+            results[severity] = {}
+        if log_key not in results[severity]:
+            results[severity][log_key] = {
+                'modules': [],
+            }
+        results[severity][log_key]['modules'] += [module]
+    return results
     
 def relvalMonitor(args):
     '''Monitor script for relval requests'''
+    lmclient = getLogMonitorClient()
+
     unmergedLogDir = '/store/unmerged/data/logs/prod/{year}/{month}/{day}'
     logDir = '/store/logs/prod/{year}/{month}/WMAgent'
     eos = '/afs/cern.ch/project/eos/installation/0.3.84-aquamarine/bin/eos.select'
@@ -117,22 +150,42 @@ def relvalMonitor(args):
 
     out = process(ls_command)
     samples = [x.strip() for x in out.split() if fnmatch.fnmatch(x.strip(),args.workflow)]
-    for sample in samples[:1]:
-        print sample
+    for sample in samples:
+        prevfiles = lmclient.listProcessedFiles(dataset=sample)
+        pfnames = [p['file_name'] for p in prevfiles]
         ls_command = '{0} ls {1}/{2}'.format(eos,fullDir,sample)
         lcfiles = process(ls_command)
         lcfiles = [x.strip() for x in lcfiles.split() if fnmatch.fnmatch(x.strip(),'{0}-LogCollect*'.format(sample))]
-        for lcfile in lcfiles[:1]:
-            lfn = 'root://{0}/{1}/{2}/{3}'.format(args.redirector,fullDir,sample,lcfile)
-            lfn = 'eos/cms/{1}/{2}/{3}'.format(args.redirector,fullDir,sample,lcfile)
-            print '    ',lfn
-            with tarfile.open(lfn) as tf:
-                for member in tf.getmembers():
-                    print '        ',member
+        print sample, len(lcfiles)
+        for lcfile in lcfiles:
+            results = {}
+            lfn = '{0}/{1}/{2}'.format(fullDir,sample,lcfile)
+            xrdpath = 'root://{0}/{1}'.format(args.redirector,lfn)
+            eospath = 'eos/cms/{0}'.format(lfn)
+            if lfn in pfnames:
+                print lfn, 'already processed'
+                continue
+            print lfn
+            with tarfile.open(eospath) as tf:
+                for member in tf.getmembers()[:1]:
                     tfg_f = tf.extractfile(member)
                     with tarfile.open(fileobj=tfg_f) as tfg:
                         for mem in tfg.getmembers():
-                            print '            ',mem
+                            filename, ftype = os.path.splitext(mem.name)
+                            if ftype not in ['.log','.xml']: continue
+                            if 'FrameworkJobReport' in filename:
+                                log_f = tfg.extractfile(mem)
+                                content = log_f.read()
+                                parseFrameworkJobReport(content)
+                            if 'stdout' in filename:
+                                log_f = tfg.extractfile(mem)
+                                content = log_f.readlines()
+                                results = parseLogFile(results,content)
+            for severity in results:
+                for log_key in results[severity]:
+                    for mod in set(results[severity][log_key]['modules']):
+                        lmclient.insertModule(file_name=lfn,module=mod,severity=severity,log_key=log_key,count=results[severity][log_key]['modules'].count(mod))
+            lmclient.insertProcessedFile(file_name=lfn,dataset=sample)
 
 def parse_command_line(argv):
     parser = argparse.ArgumentParser(description='Log monitoring for RECO')
