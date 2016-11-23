@@ -7,6 +7,8 @@ import argparse
 import itertools
 import fnmatch
 import subprocess
+import datetime
+import tarfile
 from LogMonitorAPI import LogMonitorAPI
 
 import ROOT
@@ -109,12 +111,28 @@ def relvalMonitor(args):
     logDir = '/store/logs/prod/{year}/{month}/WMAgent'
     eos = '/afs/cern.ch/project/eos/installation/0.3.84-aquamarine/bin/eos.select'
 
-    ls_unmerged = '{0} ls {1}'.format(eos,unmergedLogDir.format(year=2016,month=11,day=20))
-    ls_log = '{0} ls {1} | grep Prompt'.format(eos,logDir.format(year=2016,month=11))
+    baseDir = unmergedLogDir if args.unmerged else logDir
+    fullDir = baseDir.format(year=args.year,month=args.month,day=args.day)
+    ls_command = '{0} ls {1}'.format(eos,fullDir)
 
-    print process(ls_unmerged)
-    print process(ls_log)
-
+    out = process(ls_command)
+    samples = [x.strip() for x in out.split() if fnmatch.fnmatch(x.strip(),args.workflow)]
+    for sample in samples[:1]:
+        print sample
+        ls_command = '{0} ls {1}/{2}'.format(eos,fullDir,sample)
+        lcfiles = process(ls_command)
+        lcfiles = [x.strip() for x in lcfiles.split() if fnmatch.fnmatch(x.strip(),'{0}-LogCollect*'.format(sample))]
+        for lcfile in lcfiles[:1]:
+            lfn = 'root://{0}/{1}/{2}/{3}'.format(args.redirector,fullDir,sample,lcfile)
+            lfn = 'eos/cms/{1}/{2}/{3}'.format(args.redirector,fullDir,sample,lcfile)
+            print '    ',lfn
+            with tarfile.open(lfn) as tf:
+                for member in tf.getmembers():
+                    print '        ',member
+                    tfg_f = tf.extractfile(member)
+                    with tarfile.open(fileobj=tfg_f) as tfg:
+                        for mem in tfg.getmembers():
+                            print '            ',mem
 
 def parse_command_line(argv):
     parser = argparse.ArgumentParser(description='Log monitoring for RECO')
@@ -142,7 +160,13 @@ def parse_command_line(argv):
     #########################
     parser_relval = subparsers.add_parser('relval', help='Monitor relval workflows')
 
+    now = datetime.datetime.now()
+
     parser_relval.add_argument('--workflow', type=str, nargs='?', default='*', help='RelVal workflow request')
+    parser_relval.add_argument('--year', type=int, nargs='?', default=now.year, help='Year to process')
+    parser_relval.add_argument('--month', type=int, nargs='?', default=now.month, help='Month to process')
+    parser_relval.add_argument('--day', type=int, nargs='?', default=now.day, help='Day to process')
+    parser_relval.add_argument('--unmerged', action='store_true', help='Use unmerged from T0 (data only)')
 
     parser_relval.set_defaults(submit=relvalMonitor)
 
