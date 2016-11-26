@@ -20,7 +20,7 @@ ROOT.FWLiteEnabler.enable()
 
 from DataFormats.FWLite import Handle, Events
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # DBS modules
 try:
@@ -47,6 +47,34 @@ def getLogMonitorClient():
     lmclient = LogMonitorAPI(sqlfile)
     return lmclient
 
+def processLogErrorFile(lfn):
+    allSeverities = {}
+    try:
+        events = Events(lfn)
+        errorSummaryHandle = Handle('std::vector<edm::ErrorSummaryEntry>')
+        errorSummaryLabel = ('logErrorHarvester')
+        for i,event in enumerate(events):
+            event.getByLabel(errorSummaryLabel,errorSummaryHandle)
+            errorSummary = errorSummaryHandle.product()
+            for es in errorSummary:
+                severity = es.severity.getName()
+                category = es.category
+                module = es.module
+                count = es.count
+                if severity not in allSeverities:
+                    allSeverities[severity] = {}
+                if category not in allSeverities[severity]:
+                    allSeverities[severity][category] = {
+                        'count' : 0,
+                        'modules' : [],
+                    }
+                allSeverities[severity][category]['count'] += count
+                allSeverities[severity][category]['modules'] += [module]
+    except Exception as e:
+        print e
+
+    return allSeverities
+
 def dataMonitor(args):
     '''Monitor script for data LogError'''
     dbsclient = getDBSClient()
@@ -64,41 +92,20 @@ def dataMonitor(args):
     for dataset in datasets:
         dsname = dataset['dataset']
         files = dbsclient.listFiles(dataset=dsname)
-        print dsname, len(files)
+        logging.info('{0} {1}'.format(dsname, len(files)))
         fnames = [f['logical_file_name'] for f in files]
         prevfiles = lmclient.listProcessedFiles(dataset=dsname)
         pfnames = [p['file_name'] for p in prevfiles]
-        for fname in fnames:
+        nfiles = len(fnames)
+        for f,fname in enumerate(fnames):
             if fname in pfnames:
-                print fname, 'already processed'
+                logging.info('{0}/{1} {2} already processed'.format(f, nfiles, fname))
                 continue
-            print fname
-            allSeverities = {}
+            logging.info('{0}/{1} {2}'.format(f, nfiles, fname))
             lfn = 'root://{0}/{1}'.format(args.redirector,fname)
-            events = Events(lfn)
-            errorSummaryHandle = Handle('std::vector<edm::ErrorSummaryEntry>')
-            errorSummaryLabel = ('logErrorHarvester')
-            for i,event in enumerate(events):
-                event.getByLabel(errorSummaryLabel,errorSummaryHandle)
-                errorSummary = errorSummaryHandle.product()
-                for es in errorSummary:
-                    severity = es.severity.getName()
-                    category = es.category
-                    module = es.module
-                    count = es.count
-                    if severity not in allSeverities:
-                        allSeverities[severity] = {}
-                    if category not in allSeverities[severity]:
-                        allSeverities[severity][category] = {
-                            'count' : 0,
-                            'modules' : [],
-                        }
-                    allSeverities[severity][category]['count'] += count
-                    allSeverities[severity][category]['modules'] += [module]
+            allSeverities = processLogErrorFile(lfn)
             for severity in allSeverities:
-                #print severity
                 for error in allSeverities[severity]:
-                    #print '    ', error, allSeverities[severity][error]['count'], len(set(allSeverities[severity][error]['modules']))
                     if error=='MemoryCheck': continue # manually skip MemoryCheck module
                     for mod in set(allSeverities[severity][error]['modules']):
                         lmclient.insertModule(file_name=fname,module=mod,severity=severity,log_key=error,count=allSeverities[severity][error]['modules'].count(mod))
@@ -156,16 +163,17 @@ def relvalMonitor(args):
         ls_command = '{0} ls {1}/{2}'.format(eos,fullDir,sample)
         lcfiles = process(ls_command)
         lcfiles = [x.strip() for x in lcfiles.split() if fnmatch.fnmatch(x.strip(),'{0}-LogCollect*'.format(sample))]
-        print sample, len(lcfiles)
-        for lcfile in lcfiles:
+        nfiles = len(lcfiles)
+        logging.infor('{0} {1}'.format(sample, nfiles))
+        for l, lcfile in enumerate(lcfiles):
             results = {}
             lfn = '{0}/{1}/{2}'.format(fullDir,sample,lcfile)
             xrdpath = 'root://{0}/{1}'.format(args.redirector,lfn)
             eospath = 'eos/cms/{0}'.format(lfn)
             if lfn in pfnames:
-                print lfn, 'already processed'
+                logging.info('{0}/{1} {2} already processed'.format(l,nfiles,lfn))
                 continue
-            print lfn
+            logging.info('{0}/{1} {2}'.format(l,nfiles,lfn))
             with tarfile.open(eospath) as tf:
                 for member in tf.getmembers()[:1]:
                     tfg_f = tf.extractfile(member)
