@@ -127,13 +127,7 @@ def parseLogFile(results,content):
             continue
         components = line.strip().split()
         log_key = components[1].strip(':') if len(components)>1 else 'unknown'
-        if len(components)>2:
-            if ':' in components[2]:
-                module = components[2].split(':')[1]
-            else:
-                module = components[2]
-        else:
-            module = 'unknown'
+        module = components[2] if len(components)>2 else 'unknown'
         if severity not in results:
             results[severity] = {}
         if log_key not in results[severity]:
