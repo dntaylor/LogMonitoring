@@ -24,7 +24,7 @@ class LogMonitorAPI(object):
             'file_name' : 'TEXT',
             'dataset' : 'TEXT',
         }
-        fileUnique = ['file_name']
+        fileUnique = ['file_name','dataset']
         if not os.path.isfile(self.sqlfile):
             self.__create(logName,*logUnique,**logColumns)
             self.__create(fileName,*fileUnique,**fileColumns)
