@@ -49,12 +49,15 @@ def generateReport(args):
 
     summary = {}
     for dataset in sorted(datasets):
-        summary[dataset] = {}
         dfiles = [f['file_name'] for f in files if f['dataset']==dataset]
+        dbsfiles = dfiles
+        if args.run: dbsfiles = [f['logical_file_name'] for f in dbsclient.listFiles(dataset=dataset,run_num=args.run)]
         allResults = []
         for f in dfiles:
+            if f not in dbsfiles: continue
             allResults += lmclient.listModules(file_name=f)
         for result in allResults:
+            if dataset not in summary: summary[dataset] = {}
             severity = result['severity']
             logkey = result['log_key']
             module = result['module']
@@ -69,6 +72,7 @@ def parse_command_line(argv):
     parser = argparse.ArgumentParser(description='Log monitoring for RECO')
 
     dataset_full = parser.add_argument('--dataset', type=str, nargs='?', default='/*/*LogErrorMonitor*/USER', help='Full dataset name')
+    run = parser.add_argument('--run', type=str, nargs='*', default='', help='Runs to include in report')
 
     return parser.parse_args(argv)
 
