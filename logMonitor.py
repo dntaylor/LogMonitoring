@@ -22,7 +22,7 @@ ROOT.FWLiteEnabler.enable()
 
 from DataFormats.FWLite import Handle, Events
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # DBS modules
 try:
@@ -170,8 +170,8 @@ def parseLogFile(results,content):
 def processRequest(args,request):
     lmclient = getLogMonitorClient()
 
-    unmergedLogDir = '/store/unmerged/data/logs/prod/{year}/{month}/{day}'
-    logDir = '/store/logs/prod/{year}/{month}/WMAgent'
+    unmergedLogDir = '/store/unmerged/data/logs/prod/{year}/{month:02d}/{day}'
+    logDir = '/store/logs/prod/{year}/{month:02d}/WMAgent'
     eos = '/afs/cern.ch/project/eos/installation/0.3.84-aquamarine/bin/eos.select'
     reqname = request.keys()[0]
 
@@ -357,6 +357,8 @@ def parse_command_line(argv):
 
     parser_relval.set_defaults(submit=relvalMonitor)
 
+    parser.add_argument('-l','--log',nargs='?',type=str,const='INFO',default='INFO',choices=['INFO','DEBUG','WARNING','ERROR','CRITICAL'],help='Log level for logger')
+
     return parser.parse_args(argv)
 
 def main(argv=None):
@@ -364,6 +366,9 @@ def main(argv=None):
         argv = sys.argv[1:]
 
     args = parse_command_line(argv)
+
+    loglevel = getattr(logging,args.log)
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', level=loglevel, datefmt='%Y-%m-%d %H:%M:%S')
 
     return args.submit(args)
 
