@@ -55,7 +55,7 @@ Currently supports search by `dataset`, `module`, `severity`, `log_key`, `run_nu
 ## logMonitor_web.py
 A CherryPy application to provide web search of database.
 
-A running example can be seen at [dntaylor-test.cern.ch/logMonitor](dntaylor-test.cern.ch/logMonitor). Note, this is only viewable from within the CERN network.
+A running example can be seen at <http://dntaylor-test.cern.ch/logMonitor>. Note, this is only viewable from within the CERN network.
 
 The `query` form supports queries of the form `key=val` with support for Unix-like wildcard replacements.
 The supported keys are: `dataset`, `module`, `log_key`, `severity`, and DBS keys.
