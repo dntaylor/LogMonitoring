@@ -34,31 +34,49 @@ class LogMonitor(object):
         else:
             return self.getPage('','')
 
-    def makeTable(self,content,**kwargs):
-        result = ''
+    def getRows(self,content,**kwargs):
+        '''Get the row content as a dictionary of tuples to counts'''
+        result = {}
         for dataset,datasets in content.iteritems():
-            result += '<h3>{0}</h3>'.format(dataset)
-            result += '<br/>'
             for errorType,errors in datasets.iteritems():
-                result += '<table>'
-                result += '<tr>'
-                result += '<th>{0}</th>'.format(errorType)
-                result += '<th>Module</th>'
-                result += '<th>Count</th>'
-                result += '</tr>'
                 for errorName,modules in errors.iteritems():
                     for moduleName,count in modules.iteritems():
-                        result += '<tr>'
-                        newargs = deepcopy(kwargs)
-                        newargs.update({'log_key':errorName})
-                        result += '<td><a href="{0}">{1}</a></td>'.format(self.makeURL(**newargs),errorName)
-                        newargs = deepcopy(kwargs)
-                        newargs.update({'module':moduleName})
-                        result += '<td><a href="{0}">{1}</a></td>'.format(self.makeURL(**newargs),moduleName)
-                        result += '<td>{0}</td>'.format(count)
-                        result += '</tr>'
-                result += '</table>'
-                result += '<br/>'
+                        key = (errorType,errorName,moduleName)
+                        if key not in result: result[key] = 0
+                        result[key] += count
+        return result
+
+    def makeTable(self,content,**kwargs):
+        result = ''
+        result += '<table id="logtable" class="table table-striped table-sortable table-bordered" cellspacing="0" width="100%">'
+        result += '<thead>'
+        result += '<tr>'
+        result += '<th>Log Name</th>'
+        result += '<th>Module</th>'
+        result += '<th>Severity</th>'
+        result += '<th>Count</th>'
+        result += '</tr>'
+        result += '</thead>'
+        result += '<tbody>'
+        items = self.getRows(content)
+        for item,count in items.iteritems():
+            errorType,errorName,moduleName = item
+            result += '<tr>'
+            newargs = deepcopy(kwargs)
+            newargs.update({'log_key':errorName})
+            result += '<td><a href="{0}">{1}</a></td>'.format(self.makeURL(**newargs),errorName)
+            newargs = deepcopy(kwargs)
+            newargs.update({'module':moduleName})
+            result += '<td><a href="{0}">{1}</a></td>'.format(self.makeURL(**newargs),moduleName)
+            newargs = deepcopy(kwargs)
+            newargs.update({'severity':errorType})
+            result += '<td><a href="{0}">{1}</a></td>'.format(self.makeURL(**newargs),errorType)
+            result += '<td>{0}</td>'.format(count)
+            result += '</tr>'
+        result += '</tbody>'
+        result += '</table>'
+        result += '<br/>'
+        
         return result
 
     def makeURL(self,**kwargs):
@@ -84,14 +102,30 @@ class LogMonitor(object):
         '''.format(query)
 
     def getPage(self,query,content):
-        return """<html>
-          <head></head>
-          <body>
-          {0}
-          <br/>
-          {1}
-          </body>
-        </html>""".format(self.getForm(query),content)
+        result = """
+<html>
+  <head>
+    <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.13/css/dataTables.bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
+    <script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.13/js/dataTables.bootstrap.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.13/js/jquery.dataTables.min.js"></script>
+  </head>
+  <script>
+$(document).ready(function() {
+    $('#logtable').DataTable();
+} );
+  </script>
+  <body>
+"""
+        result += self.getForm(query)
+        result += '<br/>'
+        result += content
+        result += """
+  </body>
+</html>"""
+        return result
 
     def parse(self,query):
         # TODO: validate
